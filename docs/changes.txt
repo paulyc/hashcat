@@ -29,11 +29,11 @@
 - Added hash-mode: sha1($salt1.$pass.$salt2)
 - Added hash-mode: Ruby on Rails Restful-Authentication
 - Added hash-mode: PKZIP archive encryption
+- Added hash-mode: PKZIP Master Key
 - Added hash-mode: DiskCryptor
 - Added hash-mode: Python passlib pbkdf2-sha1
 - Added hash-mode: Python passlib pbkdf2-sha256
 - Added hash-mode: Python passlib pbkdf2-sha512
-- Added hash-mode: PKZIP Stream Cipher
 
 ##
 ## Bugs
@@ -56,6 +56,7 @@
 ## Improvements
 ##
 
+- Startup Checks: Improved the pidfile check: Do not just check for existing PID but also check executable filename
 - Cracking bcrypt and Password Safe v2: Use a feedback from the OpenCL runtime to dynamically find out optimal thread count
 - Bitcoin Wallet: Be more user friendly by allowing a larger data range for ckey and public_key
 - Building: Updated BUILD.md

@@ -108,6 +108,7 @@ static const char *ST_PASS        = "hashcat";
 static const char *ST_HASH        = "$pkzip2$3*1*1*0*8*24*a425*8827*d1730095cd829e245df04ebba6c52c0573d49d3bbeab6cb385b7fa8a28dcccd3098bfdd7*1*0*8*24*2a74*882a*51281ac874a60baedc375ca645888d29780e20d4076edd1e7154a99bde982152a736311f*2*0*e3*1c5*eda7a8de*0*29*8*e3*eda7*5096*1455781b59707f5151139e018bdcfeebfc89bc37e372883a7ec0670a5eafc622feb338f9b021b6601a674094898a91beac70e41e675f77702834ca6156111a1bf7361bc9f3715d77dfcdd626634c68354c6f2e5e0a7b1e1ce84a44e632d0f6e36019feeab92fb7eac9dda8df436e287aafece95d042059a1b27d533c5eab62c1c559af220dc432f2eb1a38a70f29e8f3cb5a207704274d1e305d7402180fd47e026522792f5113c52a116d5bb25b67074ffd6f4926b221555234aabddc69775335d592d5c7d22462b75de1259e8342a9ba71cb06223d13c7f51f13be2ad76352c3b8ed*$/pkzip2$";
 
 #define MAX_DATA (16 * 1024 * 1024)
+#define MAX_LEN  (32 * 1024)
 
 // this is required to force mingw to accept the packed attribute
 #pragma pack(push,1)
@@ -119,8 +120,8 @@ struct pkzip_hash
   u32 compressed_length;
   u32 uncompressed_length;
   u32 crc32;
-  u8  offset;
-  u8  additional_offset;
+  u32 offset;
+  u32 additional_offset;
   u8  compression_type;
   u32 data_length;
   u16 checksum_from_crc;
@@ -172,10 +173,9 @@ u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED
 
 void hex_to_binary (const char *source, int len, char* out)
 {
-  const char *pos = source;
-  for (size_t count = 0; count < (size_t) len/2; count++) {
-    sscanf(pos, "%2hhx", &out[count]);
-    pos += 2;
+  for (int i = 0, j = 0; j < len; i += 1, j += 2)
+  {
+    out[i] = hex_to_u8 ((const u8 *) &source[j]);
   }
 }
 
@@ -233,6 +233,10 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
       {
         return PARSER_TOKEN_LENGTH;
       }
+      if (pkzip->hashes[i].uncompressed_length > MAX_LEN)
+      {
+        return PARSER_HASH_LENGTH;
+      }
 
       p = strtok(NULL, "*");
       if (p == NULL) return PARSER_HASH_LENGTH;
@@ -250,7 +254,7 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
     p = strtok(NULL, "*");
     if (p == NULL) return PARSER_HASH_LENGTH;
     pkzip->hashes[i].compression_type = atoi(p);
-    if (pkzip->hashes[i].compression_type != 8) return PARSER_HASH_VALUE;
+    if (pkzip->hashes[i].compression_type != 8) return PARSER_PKZIP_CT_UNMATCHED;
 
     p = strtok(NULL, "*");
     if (p == NULL) return PARSER_HASH_LENGTH;
@@ -318,10 +322,10 @@ int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
       out_len += sprintf (line_buf + out_len, "%x*%x*%x*%x*%x*", pkzip->hashes[cnt].compressed_length, pkzip->hashes[cnt].uncompressed_length, pkzip->hashes[cnt].crc32, pkzip->hashes[cnt].offset, pkzip->hashes[cnt].additional_offset);
     }
 
-    out_len += sprintf (line_buf + out_len, "%i*%x*%x*", pkzip->hashes[cnt].compression_type, pkzip->hashes[cnt].data_length, pkzip->hashes[cnt].checksum_from_crc);
+    out_len += sprintf (line_buf + out_len, "%i*%x*%04x*", pkzip->hashes[cnt].compression_type, pkzip->hashes[cnt].data_length, pkzip->hashes[cnt].checksum_from_crc);
     if (pkzip->version == 2)
     {
-      out_len += sprintf (line_buf + out_len, "%x*", pkzip->hashes[cnt].checksum_from_timestamp);
+      out_len += sprintf (line_buf + out_len, "%04x*", pkzip->hashes[cnt].checksum_from_timestamp);
     }
 
     for (u32 i = 0; i < pkzip->hashes[cnt].data_length / 4; i++)
@@ -381,6 +385,8 @@ void module_init (module_ctx_t *module_ctx)
   module_ctx->module_hash_mode                = MODULE_DEFAULT;
   module_ctx->module_hash_category            = module_hash_category;
   module_ctx->module_hash_name                = module_hash_name;
+  module_ctx->module_hashes_count_min         = MODULE_DEFAULT;
+  module_ctx->module_hashes_count_max         = MODULE_DEFAULT;
   module_ctx->module_hlfmt_disable            = MODULE_DEFAULT;
   module_ctx->module_hook12                   = MODULE_DEFAULT;
   module_ctx->module_hook23                   = MODULE_DEFAULT;

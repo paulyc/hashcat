@@ -512,6 +512,7 @@ typedef enum parser_rc
   PARSER_TOKEN_ENCODING       = -34,
   PARSER_TOKEN_LENGTH         = -35,
   PARSER_INSUFFICIENT_ENTROPY = -36,
+  PARSER_PKZIP_CT_UNMATCHED   = -37,
   PARSER_UNKNOWN_ERROR        = -255
 
 } parser_rc_t;
@@ -919,6 +920,11 @@ struct hashconfig
 
   u32   salt_min;
   u32   salt_max;
+
+  // hash count limit
+
+  u32   hashes_count_min;
+  u32   hashes_count_max;
 
   //  int (*parse_func) (u8 *, u32, hash_t *, struct hashconfig *);
 
@@ -1442,6 +1448,7 @@ typedef struct backend_ctx
 
   // cuda
 
+  int                 nvrtc_driver_version;
   int                 cuda_driver_version;
 
   // opencl
@@ -2310,6 +2317,8 @@ typedef struct module_ctx
   u32         (*module_hash_category)           (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
   const char *(*module_hash_name)               (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
   int         (*module_hash_mode)               (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
+  u32         (*module_hashes_count_min)        (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
+  u32         (*module_hashes_count_max)        (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
   bool        (*module_hlfmt_disable)           (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
   u64         (*module_hook_salt_size)          (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);
   u64         (*module_hook_size)               (const hashconfig_t *, const user_options_t *, const user_options_extra_t *);

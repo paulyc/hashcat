@@ -286,21 +286,22 @@ static bool cuda_test_instruction (hashcat_ctx_t *hashcat_ctx, const int sm_majo
 
   if (rc_nvrtcCreateProgram == -1) return false;
 
-  char *nvrtc_options[3];
+  char *nvrtc_options[4];
 
-  nvrtc_options[0] = "--gpu-architecture";
+  nvrtc_options[0] = "--restrict";
+  nvrtc_options[1] = "--gpu-architecture";
 
-  hc_asprintf (&nvrtc_options[1], "compute_%d%d", sm_major, sm_minor);
+  hc_asprintf (&nvrtc_options[2], "compute_%d%d", sm_major, sm_minor);
 
-  nvrtc_options[2] = NULL;
+  nvrtc_options[3] = NULL;
 
   backend_ctx_t *backend_ctx = hashcat_ctx->backend_ctx;
 
   NVRTC_PTR *nvrtc = backend_ctx->nvrtc;
 
-  const nvrtcResult NVRTC_err = nvrtc->nvrtcCompileProgram (program, 2, (const char * const *) nvrtc_options);
+  const nvrtcResult NVRTC_err = nvrtc->nvrtcCompileProgram (program, 3, (const char * const *) nvrtc_options);
 
-  hcfree (nvrtc_options[1]);
+  hcfree (nvrtc_options[2]);
 
   size_t build_log_size = 0;
 
@@ -694,7 +695,10 @@ int nvrtc_init (hashcat_ctx_t *hashcat_ctx)
 
     char dllname[100];
 
-    for (int major = 20; major >= 3; major--) // older than 3.x do not ship _v2 functions anyway
+    for (int major = 20; major >= 10; major--) // older than 3.x do not ship _v2 functions anyway
+                                               // older than 7.x does not support sm 5.x
+                                               // older than 8.x does not have documentation archive online, no way to check if nvrtc support whatever we need
+                                               // older than 10.x is just a theoretical limit since we define 10.1 as the minimum required version
     {
       for (int minor = 20; minor >= 0; minor--)
       {
@@ -736,6 +740,7 @@ int nvrtc_init (hashcat_ctx_t *hashcat_ctx)
   HC_LOAD_FUNC (nvrtc, nvrtcGetProgramLog,      NVRTC_NVRTCGETPROGRAMLOG,     NVRTC, 1);
   HC_LOAD_FUNC (nvrtc, nvrtcGetProgramLogSize,  NVRTC_NVRTCGETPROGRAMLOGSIZE, NVRTC, 1);
   HC_LOAD_FUNC (nvrtc, nvrtcGetErrorString,     NVRTC_NVRTCGETERRORSTRING,    NVRTC, 1);
+  HC_LOAD_FUNC (nvrtc, nvrtcVersion,            NVRTC_NVRTCVERSION,           NVRTC, 1);
 
   return 0;
 }
@@ -878,6 +883,24 @@ int hc_nvrtcGetPTX (hashcat_ctx_t *hashcat_ctx, nvrtcProgram prog, char *ptx)
   if (NVRTC_err != NVRTC_SUCCESS)
   {
     event_log_error (hashcat_ctx, "nvrtcGetPTX(): %s", nvrtc->nvrtcGetErrorString (NVRTC_err));
+
+    return -1;
+  }
+
+  return 0;
+}
+
+int hc_nvrtcVersion (hashcat_ctx_t *hashcat_ctx, int *major, int *minor)
+{
+  backend_ctx_t *backend_ctx = hashcat_ctx->backend_ctx;
+
+  NVRTC_PTR *nvrtc = backend_ctx->nvrtc;
+
+  const nvrtcResult NVRTC_err = nvrtc->nvrtcVersion (major, minor);
+
+  if (NVRTC_err != NVRTC_SUCCESS)
+  {
+    event_log_error (hashcat_ctx, "nvrtcVersion(): %s", nvrtc->nvrtcGetErrorString (NVRTC_err));
 
     return -1;
   }
@@ -1272,6 +1295,63 @@ int hc_cuModuleLoadDataEx (hashcat_ctx_t *hashcat_ctx, CUmodule *module, const v
   }
 
   return 0;
+}
+
+int hc_cuModuleLoadDataExLog (hashcat_ctx_t *hashcat_ctx, CUmodule *module, const void *image, const u64 threads_per_block)
+{
+  #define LOG_SIZE 8192
+
+  char *info_log  = hcmalloc (LOG_SIZE);
+  char *error_log = hcmalloc (LOG_SIZE);
+
+  CUjit_option opts[7];
+  void *vals[7];
+
+  opts[0] = CU_JIT_TARGET_FROM_CUCONTEXT;
+  vals[0] = (void *) 0;
+
+  opts[1] = CU_JIT_LOG_VERBOSE;
+  vals[1] = (void *) 1;
+
+  opts[2] = CU_JIT_INFO_LOG_BUFFER;
+  vals[2] = (void *) info_log;
+
+  opts[3] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
+  vals[3] = (void *) LOG_SIZE;
+
+  opts[4] = CU_JIT_ERROR_LOG_BUFFER;
+  vals[4] = (void *) error_log;
+
+  opts[5] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
+  vals[5] = (void *) LOG_SIZE;
+
+  int opts_cnt = 6;
+
+  if ((threads_per_block > 0) && (threads_per_block < 1024))
+  {
+    opts[6] = CU_JIT_THREADS_PER_BLOCK;
+    vals[6] = (void *) threads_per_block;
+
+    opts_cnt++;
+  }
+
+  const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, module, image, opts_cnt, opts, vals);
+
+  #if defined (DEBUG)
+  printf ("cuModuleLoadDataEx() Info Log (%d):\n%s\n\n",  (int) strlen (info_log),  info_log);
+  printf ("cuModuleLoadDataEx() Error Log (%d):\n%s\n\n", (int) strlen (error_log), error_log);
+  #else
+  if (rc_cuModuleLoadDataEx == -1)
+  {
+    printf ("cuModuleLoadDataEx() Info Log (%d):\n%s\n\n",  (int) strlen (info_log),  info_log);
+    printf ("cuModuleLoadDataEx() Error Log (%d):\n%s\n\n", (int) strlen (error_log), error_log);
+  }
+  #endif
+
+  hcfree (info_log);
+  hcfree (error_log);
+
+  return rc_cuModuleLoadDataEx;
 }
 
 int hc_cuModuleUnload (hashcat_ctx_t *hashcat_ctx, CUmodule hmod)
@@ -4938,6 +5018,19 @@ int backend_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
   if ((rc_cuda_init == 0) && (rc_nvrtc_init == 0))
   {
+    // nvrtc version
+
+    int nvrtc_major = 0;
+    int nvrtc_minor = 0;
+
+    const int rc_nvrtcVersion = hc_nvrtcVersion (hashcat_ctx, &nvrtc_major, &nvrtc_minor);
+
+    if (rc_nvrtcVersion == -1) return -1;
+
+    int nvrtc_driver_version = (nvrtc_major * 1000) + (nvrtc_minor * 10);
+
+    backend_ctx->nvrtc_driver_version = nvrtc_driver_version;
+
     // cuda version
 
     int cuda_driver_version = 0;
@@ -4947,6 +5040,18 @@ int backend_ctx_init (hashcat_ctx_t *hashcat_ctx)
     if (rc_cuDriverGetVersion == -1) return -1;
 
     backend_ctx->cuda_driver_version = cuda_driver_version;
+
+    // some pre-check
+
+    if ((nvrtc_driver_version < 10010) || (cuda_driver_version < 10010))
+    {
+      event_log_error (hashcat_ctx, "Outdated NVIDIA CUDA Toolkit version '%d' detected!", cuda_driver_version);
+
+      event_log_warning (hashcat_ctx, "See hashcat.net for officially supported NVIDIA CUDA Toolkit versions.");
+      event_log_warning (hashcat_ctx, NULL);
+
+      return -1;
+    }
   }
   else
   {
@@ -6242,8 +6347,8 @@ int backend_ctx_devices_init (hashcat_ctx_t *hashcat_ctx, const int comptime)
                 {
                   event_log_error (hashcat_ctx, "* Device #%u: Outdated or broken Intel OpenCL runtime '%s' detected!", device_id + 1, device_param->opencl_driver_version);
 
-                  event_log_warning (hashcat_ctx, "You are STRONGLY encouraged to use the officially supported NVIDIA driver.");
-                  event_log_warning (hashcat_ctx, "See hashcat.net for officially supported NVIDIA drivers.");
+                  event_log_warning (hashcat_ctx, "You are STRONGLY encouraged to use the officially supported Intel OpenCL runtime.");
+                  event_log_warning (hashcat_ctx, "See hashcat.net for officially supported Intel OpenCL runtime.");
                   event_log_warning (hashcat_ctx, "See also: https://hashcat.net/faq/wrongdriver");
                   event_log_warning (hashcat_ctx, "You can use --force to override this, but do not report related errors.");
                   event_log_warning (hashcat_ctx, NULL);
@@ -7610,16 +7715,17 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
           if (rc_nvrtcCreateProgram == -1) return -1;
 
-          char **nvrtc_options = (char **) hccalloc (3 + strlen (build_options_module_buf) + 1, sizeof (char *)); // ...
+          char **nvrtc_options = (char **) hccalloc (4 + strlen (build_options_module_buf) + 1, sizeof (char *)); // ...
 
-          nvrtc_options[0] = "--device-as-default-execution-space";
-          nvrtc_options[1] = "--gpu-architecture";
+          nvrtc_options[0] = "--restrict";
+          nvrtc_options[1] = "--device-as-default-execution-space";
+          nvrtc_options[2] = "--gpu-architecture";
 
-          hc_asprintf (&nvrtc_options[2], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
+          hc_asprintf (&nvrtc_options[3], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
 
           char *nvrtc_options_string = hcstrdup (build_options_module_buf);
 
-          const int num_options = 3 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 3);
+          const int num_options = 4 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 4);
 
           const int rc_nvrtcCompileProgram = hc_nvrtcCompileProgram (hashcat_ctx, program, num_options, (const char * const *) nvrtc_options);
 
@@ -7672,9 +7778,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
           if (rc_nvrtcDestroyProgram == -1) return -1;
 
-          // tbd: check for some useful options
-
-          const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module, binary, 0, NULL, NULL);
+          const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module, binary, device_param->kernel_threads_max);
 
           if (rc_cuModuleLoadDataEx == -1) return -1;
 
@@ -7760,7 +7864,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
         if (device_param->is_cuda == true)
         {
-          const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module, kernel_sources[0], 0, NULL, NULL);
+          const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module, kernel_sources[0], device_param->kernel_threads_max);
 
           if (rc_cuModuleLoadDataEx == -1) return -1;
         }
@@ -7863,16 +7967,17 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
             if (rc_nvrtcCreateProgram == -1) return -1;
 
-            char **nvrtc_options = (char **) hccalloc (3 + strlen (build_options_buf) + 1, sizeof (char *)); // ...
+            char **nvrtc_options = (char **) hccalloc (4 + strlen (build_options_buf) + 1, sizeof (char *)); // ...
 
-            nvrtc_options[0] = "--device-as-default-execution-space";
-            nvrtc_options[1] = "--gpu-architecture";
+            nvrtc_options[0] = "--restrict";
+            nvrtc_options[1] = "--device-as-default-execution-space";
+            nvrtc_options[2] = "--gpu-architecture";
 
-            hc_asprintf (&nvrtc_options[2], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
+            hc_asprintf (&nvrtc_options[3], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
 
             char *nvrtc_options_string = hcstrdup (build_options_buf);
 
-            const int num_options = 3 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 3);
+            const int num_options = 4 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 4);
 
             const int rc_nvrtcCompileProgram = hc_nvrtcCompileProgram (hashcat_ctx, program, num_options, (const char * const *) nvrtc_options);
 
@@ -7927,7 +8032,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
             // tbd: check for some useful options
 
-            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module_mp, binary, 0, NULL, NULL);
+            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module_mp, binary, 0);
 
             if (rc_cuModuleLoadDataEx == -1) return -1;
 
@@ -8011,7 +8116,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
           if (device_param->is_cuda == true)
           {
-            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module_mp, kernel_sources[0], 0, NULL, NULL);
+            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module_mp, kernel_sources[0], 0);
 
             if (rc_cuModuleLoadDataEx == -1) return -1;
           }
@@ -8117,16 +8222,17 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
             if (rc_nvrtcCreateProgram == -1) return -1;
 
-            char **nvrtc_options = (char **) hccalloc (3 + strlen (build_options_buf) + 1, sizeof (char *)); // ...
+            char **nvrtc_options = (char **) hccalloc (4 + strlen (build_options_buf) + 1, sizeof (char *)); // ...
 
-            nvrtc_options[0] = "--device-as-default-execution-space";
-            nvrtc_options[1] = "--gpu-architecture";
+            nvrtc_options[0] = "--restrict";
+            nvrtc_options[1] = "--device-as-default-execution-space";
+            nvrtc_options[2] = "--gpu-architecture";
 
-            hc_asprintf (&nvrtc_options[2], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
+            hc_asprintf (&nvrtc_options[3], "compute_%d%d", device_param->sm_major, device_param->sm_minor);
 
             char *nvrtc_options_string = hcstrdup (build_options_buf);
 
-            const int num_options = 3 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 3);
+            const int num_options = 4 + nvrtc_make_options_array_from_string (nvrtc_options_string, nvrtc_options + 4);
 
             const int rc_nvrtcCompileProgram = hc_nvrtcCompileProgram (hashcat_ctx, program, num_options, (const char * const *) nvrtc_options);
 
@@ -8181,7 +8287,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
             // tbd: check for some useful options
 
-            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module_amp, binary, 0, NULL, NULL);
+            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module_amp, binary, 0);
 
             if (rc_cuModuleLoadDataEx == -1) return -1;
 
@@ -8265,7 +8371,7 @@ int backend_session_begin (hashcat_ctx_t *hashcat_ctx)
 
           if (device_param->is_cuda == true)
           {
-            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataEx (hashcat_ctx, &device_param->cuda_module_amp, kernel_sources[0], 0, NULL, NULL);
+            const int rc_cuModuleLoadDataEx = hc_cuModuleLoadDataExLog (hashcat_ctx, &device_param->cuda_module_amp, kernel_sources[0], 0);
 
             if (rc_cuModuleLoadDataEx == -1) return -1;
           }

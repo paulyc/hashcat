@@ -119,8 +119,8 @@ struct pkzip_hash
   u32 compressed_length;
   u32 uncompressed_length;
   u32 crc32;
-  u8  offset;
-  u8  additional_offset;
+  u32 offset;
+  u32 additional_offset;
   u8  compression_type;
   u32 data_length;
   u16 checksum_from_crc;
@@ -172,10 +172,9 @@ u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED
 
 void hex_to_binary (const char *source, int len, char* out)
 {
-  const char *pos = source;
-  for (size_t count = 0; count < (size_t) len/2; count++) {
-    sscanf(pos, "%2hhx", &out[count]);
-    pos += 2;
+  for (int i = 0, j = 0; j < len; i += 1, j += 2)
+  {
+    out[i] = hex_to_u8 ((const u8 *) &source[j]);
   }
 }
 
@@ -248,7 +247,7 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
   p = strtok(NULL, "*");
   if (p == NULL) return PARSER_HASH_LENGTH;
   pkzip->hash.compression_type = atoi(p);
-  if (pkzip->hash.compression_type != 0) return PARSER_HASH_VALUE;
+  if (pkzip->hash.compression_type != 0) return PARSER_PKZIP_CT_UNMATCHED;
 
   p = strtok(NULL, "*");
   if (p == NULL) return PARSER_HASH_LENGTH;
@@ -315,10 +314,10 @@ int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
     out_len += sprintf (line_buf + out_len, "%x*%x*%x*%x*%x*", pkzip->hash.compressed_length, pkzip->hash.uncompressed_length, pkzip->hash.crc32, pkzip->hash.offset, pkzip->hash.additional_offset);
   }
 
-  out_len += sprintf (line_buf + out_len, "%i*%x*%x*", pkzip->hash.compression_type, pkzip->hash.data_length, pkzip->hash.checksum_from_crc);
+  out_len += sprintf (line_buf + out_len, "%i*%x*%04x*", pkzip->hash.compression_type, pkzip->hash.data_length, pkzip->hash.checksum_from_crc);
   if (pkzip->version == 2)
   {
-    out_len += sprintf (line_buf + out_len, "%x*", pkzip->hash.checksum_from_timestamp);
+    out_len += sprintf (line_buf + out_len, "%04x*", pkzip->hash.checksum_from_timestamp);
   }
 
   for (u32 i = 0; i < pkzip->hash.data_length / 4; i++)
@@ -377,6 +376,8 @@ void module_init (module_ctx_t *module_ctx)
   module_ctx->module_hash_mode                = MODULE_DEFAULT;
   module_ctx->module_hash_category            = module_hash_category;
   module_ctx->module_hash_name                = module_hash_name;
+  module_ctx->module_hashes_count_min         = MODULE_DEFAULT;
+  module_ctx->module_hashes_count_max         = MODULE_DEFAULT;
   module_ctx->module_hlfmt_disable            = MODULE_DEFAULT;
   module_ctx->module_hook12                   = MODULE_DEFAULT;
   module_ctx->module_hook23                   = MODULE_DEFAULT;

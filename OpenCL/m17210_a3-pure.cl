@@ -124,8 +124,8 @@ struct pkzip_hash
   u32 compressed_length;
   u32 uncompressed_length;
   u32 crc32;
-  u8  offset;
-  u8  additional_offset;
+  u32 offset;
+  u32 additional_offset;
   u8  compression_type;
   u32 data_length;
   u16 checksum_from_crc;
@@ -421,13 +421,45 @@ KERNEL_FQ void m17210_sxx (KERN_ATTR_VECTOR_ESALT (pkzip_t))
 
     // global memory from here
 
-    for (u32 i = MAX_LOCAL * 4; i < data_length; i++)
+    for (u32 j = MAX_LOCAL, i = MAX_LOCAL * 4; i < data_length; j++, i += 4)
     {
-      update_key3 (key2, key3);
-      plain = esalt_bufs[digests_offset].hash.data[i] ^ key3;
-      update_key012 (key0, key1, key2, plain, l_crc32tab);
+      next = esalt_bufs[digests_offset].hash.data[j];
 
-      crc = CRC32 (crc, plain, l_crc32tab);
+      if (data_length >= (i + 1))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8a_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 2))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8b_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 3))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8c_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 4))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8d_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
     }
 
     const u32 r0 = ~crc;
@@ -630,13 +662,45 @@ KERNEL_FQ void m17210_mxx (KERN_ATTR_VECTOR_ESALT (pkzip_t))
 
     // global memory from here
 
-    for (u32 i = MAX_LOCAL * 4; i < data_length; i++)
+    for (u32 j = MAX_LOCAL, i = MAX_LOCAL * 4; i < data_length; j++, i += 4)
     {
-      update_key3 (key2, key3);
-      plain = esalt_bufs[digests_offset].hash.data[i] ^ key3;
-      update_key012 (key0, key1, key2, plain, l_crc32tab);
+      next = esalt_bufs[digests_offset].hash.data[j];
 
-      crc = CRC32 (crc, plain, l_crc32tab);
+      if (data_length >= (i + 1))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8a_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 2))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8b_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 3))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8c_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
+
+      if (data_length >= (i + 4))
+      {
+        update_key3 (key2, key3);
+        plain = unpack_v8d_from_v32_S (next) ^ key3;
+        update_key012 (key0, key1, key2, plain, l_crc32tab);
+
+        crc = CRC32 (crc, plain, l_crc32tab);
+      }
     }
 
     const u32 r0 = ~crc;

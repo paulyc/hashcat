@@ -126,8 +126,8 @@ struct pkzip_hash
   u32 compressed_length;
   u32 uncompressed_length;
   u32 crc32;
-  u8  offset;
-  u8  additional_offset;
+  u32 offset;
+  u32 additional_offset;
   u8  compression_type;
   u32 data_length;
   u16 checksum_from_crc;
@@ -363,7 +363,7 @@ KERNEL_FQ void m17230_sxx (KERN_ATTR_RULES_ESALT (pkzip_t))
 
       update_key3 (key2, key3);
       plain = unpack_v8a_from_v32_S (next) ^ key3;
-      if ((plain & 6) == 0 || (plain & 6) == 6) break;
+      if (esalt_bufs[digests_offset].hashes[idx].compression_type == 8 && ((plain & 6) == 0 || (plain & 6) == 6)) break;
 
       if (idx + 1 == esalt_bufs[digests_offset].hash_count)
       {
@@ -533,7 +533,7 @@ KERNEL_FQ void m17230_mxx (KERN_ATTR_RULES_ESALT (pkzip_t))
 
       update_key3 (key2, key3);
       plain = unpack_v8a_from_v32_S (next) ^ key3;
-      if ((plain & 6) == 0 || (plain & 6) == 6) break;
+      if (esalt_bufs[digests_offset].hashes[idx].compression_type == 8 && ((plain & 6) == 0 || (plain & 6) == 6)) break;
 
       if (idx + 1 == esalt_bufs[digests_offset].hash_count)
       {
